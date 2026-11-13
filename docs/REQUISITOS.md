@@ -42,3 +42,14 @@ Build a Windows Desktop Flutter app called **WatterReminder** that lives in the 
 - Implement the System Tray (`Shell_NotifyIconW`), native notification (`NIF_INFO`), context menu (`CreatePopupMenu`), and close-to-tray (`WM_CLOSE` interception) directly in the Windows C++ runner (`windows/runner/flutter_window.cpp` and `flutter_window.h`) bridged to Dart via `MethodChannel('watter_reminder/native')` so it compiles cleanly with zero external C++ plugin conflicts.
 - Set the default window size in `windows/runner/main.cpp` to a compact desktop utility size (e.g., `480x660`).
 - Design a polished, dark-ocean/glacier-blue desktop UI featuring a circular countdown ring, interval selector, custom notification message editor, and test notification button.
+
+### 5. Multi-language Support (i18n)
+
+- The app supports **Portuguese (PT)**, **English (EN)** and **Spanish (ES)**, switchable at runtime from a language selector in the main window header (no restart required).
+- All UI texts, notices, the default reminder message and the native tray context menu labels are translated.
+- The selected language is persisted in the local settings. If the reminder message is still the default one, it follows the selected language; custom messages are preserved.
+- Translations live in `lib/l10n.dart`; the tray menu labels are sent to the C++ runner through the `configure` method of `MethodChannel('watter_reminder/native')`.
+
+### 6. Notification Click
+
+- Clicking the Windows notification (balloon/toast) opens, restores and focuses the application window (`NIN_BALLOONUSERCLICK`).

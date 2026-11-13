@@ -6,6 +6,7 @@
 #include <flutter/method_channel.h>
 
 #include <memory>
+#include <string>
 
 #include "win32_window.h"
 
@@ -33,6 +34,11 @@ class FlutterWindow : public Win32Window {
   bool quitting_ = false;
   bool paused_ = false;
   bool tray_added_ = false;
+  std::wstring label_open_ = L"Open WatterReminder";
+  std::wstring label_drink_ = L"Drink Water Now";
+  std::wstring label_pause_ = L"Pause Reminders";
+  std::wstring label_resume_ = L"Resume Reminders";
+  std::wstring label_quit_ = L"Quit";
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
   // The project to run.
   flutter::DartProject project_;

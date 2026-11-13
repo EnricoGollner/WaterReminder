@@ -67,14 +67,30 @@ bool FlutterWindow::OnCreate() {
       } else {
         result->Error("invalid_argument", "Expected a message string");
       }
-    } else if (call.method_name() == "setPaused") {
-      const auto* paused = std::get_if<bool>(call.arguments());
-      if (paused) {
-        paused_ = *paused;
-        result->Success();
-      } else {
-        result->Error("invalid_argument", "Expected a boolean");
+    } else if (call.method_name() == "configure") {
+      const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
+      if (!args) {
+        result->Error("invalid_argument", "Expected a map");
+        return;
       }
+      auto text = [&](const char* key, std::wstring& target) {
+        auto it = args->find(flutter::EncodableValue(key));
+        if (it != args->end()) {
+          if (const auto* s = std::get_if<std::string>(&it->second)) {
+            target = FromUtf8(*s);
+          }
+        }
+      };
+      auto it = args->find(flutter::EncodableValue("paused"));
+      if (it != args->end()) {
+        if (const auto* p = std::get_if<bool>(&it->second)) paused_ = *p;
+      }
+      text("open", label_open_);
+      text("drink", label_drink_);
+      text("pause", label_pause_);
+      text("resume", label_resume_);
+      text("quit", label_quit_);
+      result->Success();
     } else {
       result->NotImplemented();
     }
@@ -115,7 +131,9 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   if (message == kTrayMessage) {
     const auto event = LOWORD(lparam);
     if (event == WM_LBUTTONUP || event == NIN_SELECT ||
-        event == NIN_KEYSELECT) RestoreWindow();
+        event == NIN_KEYSELECT || event == NIN_BALLOONUSERCLICK) {
+      RestoreWindow();
+    }
     if (event == WM_RBUTTONUP || event == WM_CONTEXTMENU) ShowTrayMenu();
     return 0;
   }
@@ -203,12 +221,12 @@ void FlutterWindow::SendAction(const std::string& action) {
 void FlutterWindow::ShowTrayMenu() {
   HMENU menu = CreatePopupMenu();
   if (!menu) return;
-  AppendMenuW(menu, MF_STRING, kOpen, L"Open WatterReminder");
-  AppendMenuW(menu, MF_STRING, kDrink, L"Drink Water Now");
+  AppendMenuW(menu, MF_STRING, kOpen, label_open_.c_str());
+  AppendMenuW(menu, MF_STRING, kDrink, label_drink_.c_str());
   AppendMenuW(menu, MF_STRING, kPause,
-              paused_ ? L"Resume Reminders" : L"Pause Reminders");
+              paused_ ? label_resume_.c_str() : label_pause_.c_str());
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kQuit, L"Quit");
+  AppendMenuW(menu, MF_STRING, kQuit, label_quit_.c_str());
   POINT point{};
   GetCursorPos(&point);
   SetForegroundWindow(GetHandle());

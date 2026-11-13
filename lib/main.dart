@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'l10n.dart';
+
 const _channel = MethodChannel('watter_reminder/native');
-const _defaultMessage =
-    'Time to drink water! Take a quick break and stay hydrated.';
 const _background = Color(0xFF071923);
 const _panel = Color(0xFF102B39);
 const _ice = Color(0xFF78DBEE);
@@ -46,7 +46,9 @@ class _ReminderPageState extends State<ReminderPage> {
   int interval = 30;
   int glasses = 0;
   bool paused = false;
-  String message = _defaultMessage;
+  AppLang lang = AppLang.en;
+  late String message = Strings.of(lang).defaultMessage;
+  Strings get t => Strings.of(lang);
   DateTime deadline = DateTime.now().add(const Duration(minutes: 30));
   Duration pausedRemaining = const Duration(minutes: 30);
   Timer? ticker;
@@ -60,7 +62,7 @@ class _ReminderPageState extends State<ReminderPage> {
   void initState() {
     super.initState();
     customController = TextEditingController();
-    messageController = TextEditingController(text: message);
+    messageController = TextEditingController();
     final base = Platform.environment['APPDATA'] ?? Directory.current.path;
     settingsFile = File(
       '$base${Platform.pathSeparator}WatterReminder${Platform.pathSeparator}settings.json',
@@ -78,10 +80,12 @@ class _ReminderPageState extends State<ReminderPage> {
         final data = jsonDecode(
           await settingsFile.readAsString(),
         ) as Map<String, dynamic>;
+        lang = AppLang.fromCode(data['lang'] as String?);
         interval = ((data['interval'] as num?)?.toInt() ?? 30).clamp(1, 1440);
-        message = (data['message'] as String?)?.trim().isNotEmpty == true
-            ? data['message'] as String
-            : _defaultMessage;
+        final saved = (data['message'] as String?)?.trim() ?? '';
+        message = saved.isEmpty || Strings.isDefaultMessage(saved)
+            ? t.defaultMessage
+            : saved;
         paused = data['paused'] == true;
         final today = DateTime.now().toIso8601String().substring(0, 10);
         glasses = data['day'] == today
@@ -97,11 +101,11 @@ class _ReminderPageState extends State<ReminderPage> {
             DateTime.now().add(Duration(minutes: interval));
       }
     } catch (_) {
-      notice = 'Could not read saved settings. Defaults are in use.';
+      notice = t.noticeReadError;
     }
     messageController.text = message;
     customController.text = interval.toString();
-    await _channel.invokeMethod<void>('setPaused', paused);
+    await _syncNative();
     if (!mounted) return;
     setState(() => ready = true);
     ticker = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
@@ -113,6 +117,7 @@ class _ReminderPageState extends State<ReminderPage> {
       await settingsFile.parent.create(recursive: true);
       await settingsFile.writeAsString(
         jsonEncode({
+          'lang': lang.name,
           'interval': interval,
           'message': message,
           'paused': paused,
@@ -123,7 +128,7 @@ class _ReminderPageState extends State<ReminderPage> {
         }),
       );
     } catch (_) {
-      if (mounted) setState(() => notice = 'Settings could not be saved.');
+      if (mounted) setState(() => notice = t.noticeSaveError);
     }
   }
 
@@ -158,8 +163,9 @@ class _ReminderPageState extends State<ReminderPage> {
     try {
       await _channel.invokeMethod<void>('showNotification', message);
     } on PlatformException {
-      if (mounted)
-        setState(() => notice = 'Windows could not show the notification.');
+      if (mounted) {
+        setState(() => notice = t.noticeNotifyError);
+      }
     }
   }
 
@@ -168,7 +174,7 @@ class _ReminderPageState extends State<ReminderPage> {
       glasses++;
       deadline = DateTime.now().add(Duration(minutes: interval));
       pausedRemaining = Duration(minutes: interval);
-      notice = 'Glass logged. Timer reset.';
+      notice = t.noticeLogged;
     });
     _save();
   }
@@ -182,13 +188,43 @@ class _ReminderPageState extends State<ReminderPage> {
       }
       paused = !paused;
     });
-    _channel.invokeMethod<void>('setPaused', paused);
+    _syncNative();
+    _save();
+  }
+
+  /// Envia ao runner nativo o estado de pausa e os textos do menu da bandeja.
+  Future<void> _syncNative() async {
+    try {
+      await _channel.invokeMethod<void>('configure', {
+        'paused': paused,
+        'open': t.trayOpen,
+        'drink': t.trayDrink,
+        'pause': t.trayPause,
+        'resume': t.trayResume,
+        'quit': t.trayQuit,
+      });
+    } on PlatformException {
+      // Menu nativo mantém os textos anteriores.
+    }
+  }
+
+  void _setLang(AppLang value) {
+    setState(() {
+      final custom = !Strings.isDefaultMessage(message);
+      lang = value;
+      if (!custom) {
+        message = t.defaultMessage;
+        messageController.text = message;
+      }
+      notice = null;
+    });
+    _syncNative();
     _save();
   }
 
   void _setInterval(int minutes) {
     if (minutes < 1 || minutes > 1440) {
-      setState(() => notice = 'Enter 1 to 1440 minutes.');
+      setState(() => notice = t.noticeRange);
       return;
     }
     setState(() {
@@ -196,7 +232,7 @@ class _ReminderPageState extends State<ReminderPage> {
       deadline = DateTime.now().add(Duration(minutes: minutes));
       pausedRemaining = Duration(minutes: minutes);
       customController.text = minutes.toString();
-      notice = 'Reminder interval updated.';
+      notice = t.noticeUpdated;
     });
     _save();
   }
@@ -241,7 +277,7 @@ class _ReminderPageState extends State<ReminderPage> {
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Column(
+                  Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
@@ -253,7 +289,7 @@ class _ReminderPageState extends State<ReminderPage> {
                         ),
                       ),
                       Text(
-                        'YOUR HYDRATION COMPANION',
+                        t.subtitle,
                         style: TextStyle(
                           fontSize: 9,
                           letterSpacing: 1.8,
@@ -261,6 +297,42 @@ class _ReminderPageState extends State<ReminderPage> {
                         ),
                       ),
                     ],
+                  ),
+                  const Spacer(),
+                  PopupMenuButton<AppLang>(
+                    tooltip: t.language,
+                    initialValue: lang,
+                    onSelected: _setLang,
+                    color: _panel,
+                    itemBuilder: (_) => [
+                      for (final l in AppLang.values)
+                        PopupMenuItem(value: l, child: Text(l.label)),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _panel,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: _ice.withValues(alpha: .2)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.language, size: 16, color: _ice),
+                          const SizedBox(width: 6),
+                          Text(
+                            lang.code,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -310,7 +382,7 @@ class _ReminderPageState extends State<ReminderPage> {
                                 ),
                               ),
                               Text(
-                                paused ? 'PAUSED' : 'UNTIL NEXT REMINDER',
+                                paused ? t.paused : t.untilNext,
                                 style: const TextStyle(
                                   fontSize: 10,
                                   letterSpacing: 1.5,
@@ -324,7 +396,7 @@ class _ReminderPageState extends State<ReminderPage> {
                     ),
                     const SizedBox(height: 15),
                     Text(
-                      '$glasses ${glasses == 1 ? 'glass' : 'glasses'} today',
+                      '$glasses ${glasses == 1 ? t.glass : t.glasses} ${t.today}',
                       style: const TextStyle(
                         color: _ice,
                         fontSize: 15,
@@ -340,7 +412,7 @@ class _ReminderPageState extends State<ReminderPage> {
                   Expanded(
                     child: _action(
                       paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-                      paused ? 'Resume' : 'Pause',
+                      paused ? t.resume : t.pause,
                       _togglePause,
                     ),
                   ),
@@ -348,15 +420,15 @@ class _ReminderPageState extends State<ReminderPage> {
                   Expanded(
                     child: _action(
                       Icons.water_drop_outlined,
-                      'Just drank',
+                      t.justDrank,
                       _drink,
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 22),
-              const Text(
-                'REMINDER INTERVAL',
+              Text(
+                t.interval,
                 style: TextStyle(
                   color: _ice,
                   fontSize: 11,
@@ -390,20 +462,20 @@ class _ReminderPageState extends State<ReminderPage> {
                       controller: customController,
                       keyboardType: TextInputType.number,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: _input('Custom minutes'),
+                      decoration: _input(t.customMinutes),
                     ),
                   ),
                   const SizedBox(width: 9),
                   FilledButton(
                     onPressed: () =>
                         _setInterval(int.tryParse(customController.text) ?? 0),
-                    child: const Text('Set'),
+                    child: Text(t.set),
                   ),
                 ],
               ),
               const SizedBox(height: 21),
-              const Text(
-                'NOTIFICATION MESSAGE',
+              Text(
+                t.messageTitle,
                 style: TextStyle(
                   color: _ice,
                   fontSize: 11,
@@ -416,10 +488,10 @@ class _ReminderPageState extends State<ReminderPage> {
                 controller: messageController,
                 maxLines: 2,
                 maxLength: 200,
-                decoration: _input('Your reminder message'),
+                decoration: _input(t.messageHint),
                 onChanged: (value) {
                   message = value.trim().isEmpty
-                      ? _defaultMessage
+                      ? t.defaultMessage
                       : value.trim();
                   _save();
                 },
@@ -429,7 +501,7 @@ class _ReminderPageState extends State<ReminderPage> {
                 child: OutlinedButton.icon(
                   onPressed: _notify,
                   icon: const Icon(Icons.notifications_outlined),
-                  label: const Text('Test notification'),
+                  label: Text(t.test),
                 ),
               ),
               if (notice != null)
