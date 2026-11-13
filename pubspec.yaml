@@ -1,14 +1,16 @@
-name: watter_reminder
-description: "A new Flutter project."
+name: water_reminder
+description: "WaterReminder - Windows tray app that reminds you to drink water."
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.0+2
 
 environment:
   sdk: ^3.13.0
 
 dependencies:
+  equatable: ^3.0.0
   flutter:
     sdk: flutter
+  flutter_riverpod: ^3.5.0
 
 dev_dependencies:
   flutter_test:

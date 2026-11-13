@@ -10,12 +10,20 @@
 
 #include "win32_window.h"
 
-// A window that does nothing but host a Flutter view.
+// Hosts the Flutter view and owns the tray icon, notifications, global hotkey
+// and close-to-tray behavior, bridged to Dart through the
+// "water_reminder/native" method channel.
 class FlutterWindow : public Win32Window {
  public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
   explicit FlutterWindow(const flutter::DartProject& project);
   virtual ~FlutterWindow();
+
+  // Keeps the window hidden after the first frame (used by --minimized).
+  void SetStartHidden(bool hidden) { start_hidden_ = hidden; }
+
+  // Message another instance posts to bring this window to the front.
+  static UINT ShowMessage();
 
  protected:
   // Win32Window:
@@ -25,21 +33,37 @@ class FlutterWindow : public Win32Window {
                          LPARAM const lparam) noexcept override;
 
  private:
+  using Channel = flutter::MethodChannel<flutter::EncodableValue>;
+  using Result = std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>>;
+
+  void HandleMethodCall(const flutter::MethodCall<flutter::EncodableValue>& call, Result result);
   void ShowTrayMenu();
   void RestoreWindow();
   void SendAction(const std::string& action);
   bool AddTrayIcon();
   void RemoveTrayIcon();
-  void ShowNotification(const std::string& message);
+  void UpdateTrayIcon();
+  bool ShowNotification(const std::wstring& title, const std::wstring& message, bool sound);
+  bool SetHotkey(bool enabled);
+
   bool quitting_ = false;
   bool paused_ = false;
   bool tray_added_ = false;
-  std::wstring label_open_ = L"Open WatterReminder";
+  bool start_hidden_ = false;
+  bool hotkey_registered_ = false;
+  HICON icon_ = nullptr;
+  HICON paused_icon_ = nullptr;
+  std::wstring tooltip_ = L"WaterReminder";
+  std::wstring label_open_ = L"Open WaterReminder";
   std::wstring label_drink_ = L"Drink Water Now";
+  std::wstring label_snooze_ = L"Snooze 5 Minutes";
   std::wstring label_pause_ = L"Pause Reminders";
   std::wstring label_resume_ = L"Resume Reminders";
   std::wstring label_quit_ = L"Quit";
-  std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>> channel_;
+  std::wstring label_drank_action_ = L"I drank";
+  std::wstring label_snooze_action_ = L"Snooze 5 min";
+  std::unique_ptr<Channel> channel_;
+
   // The project to run.
   flutter::DartProject project_;
 
