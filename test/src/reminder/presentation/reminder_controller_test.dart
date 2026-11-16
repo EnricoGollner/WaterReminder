@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -49,8 +50,16 @@ void main() {
       expect(native.labels?.open, 'Abrir WaterReminder');
     });
 
-    test('reagenda quando o prazo salvo já passou', () async {
+    test('prazo salvo já vencido dispara um lembrete no primeiro tick', () async {
       await start(data: ReminderData(deadline: clock.now.subtract(const Duration(hours: 2))));
+      expect(state().deadline, clock.now);
+      await controller().tick();
+      expect(native.notifications, hasLength(1));
+      expect(state().deadline, clock.now.add(const Duration(minutes: 30)));
+    });
+
+    test('reagenda quando o prazo salvo está além do intervalo', () async {
+      await start(data: ReminderData(deadline: clock.now.add(const Duration(hours: 2))));
       expect(state().deadline, clock.now.add(const Duration(minutes: 30)));
     });
 
@@ -68,6 +77,13 @@ void main() {
       clock.advance(const Duration(minutes: 30));
       await controller().tick();
       expect(native.notifications, [ReminderStrings.of(AppLang.en).defaultMessage]);
+      expect(state().deadline, clock.now.add(const Duration(minutes: 30)));
+    });
+
+    test('relógio que volta no tempo não adia o lembrete além do ciclo', () async {
+      await start();
+      clock.advance(const Duration(hours: -3));
+      await controller().tick();
       expect(state().deadline, clock.now.add(const Duration(minutes: 30)));
     });
 
@@ -190,6 +206,22 @@ void main() {
       await start();
       await controller().setAutostart(true);
       expect(state().autostart, isTrue);
+    });
+  });
+
+  group('ReminderController gravação', () {
+    test('pedidos durante uma gravação lenta são fundidos e o último estado vence', () async {
+      await start();
+      settings.saves = 0;
+      settings.gate = Completer<void>();
+      controller().setMessage('a');
+      controller().setMessage('b');
+      controller().setMessage('c');
+      expect(settings.saves, 1);
+      settings.gate!.complete();
+      await pumpEventQueue();
+      expect(settings.saves, 2);
+      expect(settings.data?.settings.customMessage, 'c');
     });
   });
 }

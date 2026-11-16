@@ -23,6 +23,7 @@ class ReminderController extends Notifier<ReminderState> {
   bool _notifying = false;
   int _noticeId = 0;
   String _lastTooltip = '';
+  bool _saving = false, _dirty = false;
 
   INativeRepository get _native => ref.read(injectorContainer.nativeRepository);
   DateTime _clock() => ref.read(injectorContainer.clockProvider)();
@@ -46,7 +47,7 @@ class ReminderController extends Notifier<ReminderState> {
     final autostart = await _native.getAutostart();
     if (!ref.mounted) return;
     final now = _clock(), saved = data ?? const ReminderData(), settings = saved.settings;
-    final deadline = saved.deadline == null || saved.deadline!.isBefore(now) || saved.deadline!.isAfter(now.add(settings.interval)) ? now.add(settings.interval) : saved.deadline!;
+    final deadline = _restoreDeadline(saved.deadline, now, settings.interval);
     final remaining = saved.pausedRemaining == null || saved.pausedRemaining! > settings.interval ? null : saved.pausedRemaining;
     state = state.copyWith(status: .loaded, settings: settings, paused: saved.paused, deadline: deadline, cycle: settings.interval, pausedRemaining: remaining, history: saved.history, now: now, autostart: autostart);
     _actions = _native.actions.listen(_onNativeAction);
@@ -55,11 +56,21 @@ class ReminderController extends Notifier<ReminderState> {
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) => tick());
   }
 
+  /// Prazo salvo vencido (app fechado, suspensão) dispara um lembrete no primeiro tick; prazo ausente ou além do intervalo reinicia o ciclo.
+  static DateTime _restoreDeadline(DateTime? saved, DateTime now, Duration interval) {
+    if (saved == null || saved.isAfter(now.add(interval))) return now.add(interval);
+    return saved.isBefore(now) ? now : saved;
+  }
+
   /// Avança o temporizador: dispara o lembrete quando o prazo vence, respeitando horário ativo e modo foco.
   Future<void> tick() async {
     if (state.status != .loaded) return;
     final now = _clock();
     state = state.copyWith(now: now);
+    if (!state.paused && state.deadline.isAfter(now.add(state.cycle))) {
+      state = state.copyWith(deadline: now.add(state.cycle)); // relógio voltou no tempo
+      _save();
+    }
     if (!state.paused && !now.isBefore(state.deadline) && !_notifying) await _onDeadline(now);
     _updateTray();
   }
@@ -231,8 +242,20 @@ class ReminderController extends Notifier<ReminderState> {
     _native.updateTray(tooltip: tooltip, paused: state.paused);
   }
 
+  /// Salva o estado em série: gravações pedidas durante outra em andamento são fundidas numa só, com o estado mais recente.
   Future<void> _save() async {
-    final ok = await ref.read(injectorContainer.settingsRepository).save(.new(settings: state.settings, paused: state.paused, deadline: state.deadline, pausedRemaining: state.pausedRemaining, history: state.history));
-    if (!ok && ref.mounted) _notice(state.strings.noticeSaveError, error: true);
+    _dirty = true;
+    if (_saving) return;
+    _saving = true;
+    final repository = ref.read(injectorContainer.settingsRepository);
+    try {
+      while (_dirty && ref.mounted) {
+        _dirty = false;
+        final ok = await repository.save(.new(settings: state.settings, paused: state.paused, deadline: state.deadline, pausedRemaining: state.pausedRemaining, history: state.history));
+        if (!ok && ref.mounted) _notice(state.strings.noticeSaveError, error: true);
+      }
+    } finally {
+      _saving = false;
+    }
   }
 }

@@ -24,13 +24,25 @@ class SettingsRepository implements ISettingsRepository {
 
   @override
   Future<ReminderData?> load() async {
+    File? source;
     try {
-      final source = await file.exists() ? file : (legacyFile != null && await legacyFile!.exists() ? legacyFile : null);
+      source = await file.exists() ? file : (legacyFile != null && await legacyFile!.exists() ? legacyFile : null);
       if (source == null) return null;
       final json = jsonDecode(await source.readAsString());
-      return json is Map<String, dynamic> ? ReminderDataDto(json).toEntity() : null;
+      if (json is Map<String, dynamic>) return ReminderDataDto(json).toEntity();
     } on Object {
-      return null;
+      // Arquivo ilegível ou corrompido: cai no backup abaixo.
+    }
+    if (source != null) await _backup(source);
+    return null;
+  }
+
+  /// Preserva o arquivo corrompido como `.bak` para que a próxima gravação não o sobrescreva.
+  Future<void> _backup(File source) async {
+    try {
+      await source.copy('${source.path}.bak');
+    } on Object {
+      // Sem backup possível; segue com os padrões.
     }
   }
 

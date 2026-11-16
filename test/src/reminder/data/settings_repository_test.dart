@@ -41,5 +41,12 @@ void main() {
       await file.writeAsString('{not json');
       expect(await SettingsRepository(file: file).load(), isNull);
     });
+
+    test('JSON corrompido é preservado em .bak', () async {
+      await file.create(recursive: true);
+      await file.writeAsString('{not json');
+      await SettingsRepository(file: file).load();
+      expect(await File('${file.path}.bak').readAsString(), '{not json');
+    });
   });
 }

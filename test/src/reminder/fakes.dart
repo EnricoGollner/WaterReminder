@@ -13,12 +13,16 @@ class FakeSettingsRepository implements ISettingsRepository {
   final bool failSave;
   int saves = 0;
 
+  /// Quando definido, cada gravação espera por ele (simula disco lento).
+  Completer<void>? gate;
+
   @override
   Future<ReminderData?> load() async => data;
 
   @override
   Future<bool> save(ReminderData data) async {
     saves++;
+    if (gate != null) await gate!.future;
     if (failSave) return false;
     this.data = data;
     return true;
